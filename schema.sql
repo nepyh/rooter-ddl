@@ -5,7 +5,7 @@
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(12) UNIQUE,
-    password VARCHAR(20),
+    password VARCHAR(255),
     email VARCHAR(320) NOT NULL UNIQUE,
     
     school_name VARCHAR(100),
@@ -29,7 +29,7 @@ CREATE TABLE users (
 CREATE TABLE user_unavailable_times (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL,
-    day_of_week VARCHAR(10) NOT NULL,
+    day_of_week VARCHAR(10) NOT NULL, -- Java의 java.time.DayOfWeek Enum 값 저장 (예: MONDAY, TUESDAY)
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
     
@@ -38,3 +38,5 @@ CREATE TABLE user_unavailable_times (
         REFERENCES users(id) 
         ON DELETE CASCADE
 );
+
+CREATE INDEX idx_user_unavailable_times_user_id ON user_unavailable_times(user_id);
