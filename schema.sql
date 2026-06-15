@@ -92,3 +92,76 @@ create table chapters (
 
 create index idx_textbooks_subject_id on textbooks(subject_id);
 create index idx_chapters_textbook_id on chapters(textbook_id);
+
+-- =============================================================================
+-- ai 계획 생성 도메인
+-- =============================================================================
+
+create table plan_boards (
+    id int generated always as identity primary key,
+    user_id int not null,
+    title varchar(100) not null,
+    start_date date not null,
+    end_date date not null,
+    created_at timestamp with time zone default current_timestamp,
+    constraint fk_plan_boards_user
+        foreign key (user_id) references users(id) on delete cascade
+);
+
+create table plan_subjects (
+    id int generated always as identity primary key,
+    plan_board_id int not null,
+    textbook_id int not null,
+    start_chapter_id int not null,
+    end_chapter_id int not null,
+    custom_range_text text null,
+    constraint fk_plan_subjects_board
+        foreign key (plan_board_id) references plan_boards(id) on delete cascade,
+    constraint fk_plan_subjects_textbook
+        foreign key (textbook_id) references textbooks(id),
+    constraint fk_plan_subjects_start_chapter
+        foreign key (start_chapter_id) references chapters(id),
+    constraint fk_plan_subjects_end_chapter
+        foreign key (end_chapter_id) references chapters(id)
+);
+
+create table plan_custom_exceptions (
+    id int generated always as identity primary key,
+    plan_board_id int not null,
+    exception_date date not null,
+    start_time time not null,
+    end_time time not null,
+    constraint fk_plan_custom_exceptions_board
+        foreign key (plan_board_id) references plan_boards(id) on delete cascade
+);
+
+create index idx_plan_boards_user_id on plan_boards(user_id);
+create index idx_plan_subjects_board_id on plan_subjects(plan_board_id);
+create index idx_plan_custom_exceptions_board_id on plan_custom_exceptions(plan_board_id);
+
+-- =============================================================================
+-- ai 분석 결과물 도메인
+-- =============================================================================
+
+create table daily_plans (
+    id int generated always as identity primary key,
+    plan_board_id int not null,
+    plan_date date not null,
+    constraint fk_daily_plans_board
+        foreign key (plan_board_id) references plan_boards(id) on delete cascade
+);
+
+create table plan_tasks (
+    id int generated always as identity primary key,
+    daily_plan_id int not null,
+    task_name varchar(150) not null,
+    start_time time not null,
+    end_time time not null,
+    estimated_minutes int not null,
+    is_completed boolean default false,
+    constraint fk_plan_tasks_daily_plan
+        foreign key (daily_plan_id) references daily_plans(id) on delete cascade
+);
+
+create index idx_daily_plans_board_id on daily_plans(plan_board_id);
+create index idx_plan_tasks_daily_plan_id on plan_tasks(daily_plan_id);
