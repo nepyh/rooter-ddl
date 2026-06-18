@@ -1,0 +1,122 @@
+name: schema-check
+
+# [목적] schema.sql 이 바뀌는 PR 에서 "이 변경이 운영 DB 에 실제로 가할 DDL" 을
+#        psqldef dry-run 으로 미리 뽑아 PR 에 sticky 코멘트로 보여준다.
+#        + 데이터 손실이 날 수 있는 파괴적 변경은 라벨 없이는 통과시키지 않는다.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]   # 라벨 달면 재검사되도록
+    paths:
+      - "schema.sql"
+      - ".github/workflows/schema-check.yml"
+
+permissions:          # [노하우] 최소 권한 — sticky 코멘트 달 PR 쓰기 권한만
+  contents: read
+  pull-requests: write
+
+concurrency:          # [노하우] 같은 PR 에 연속 push 하면 이전 실행을 취소(자원 절약)
+  group: schema-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+
+    # [핵심] 운영 DB 에 붙지 않는다. CI 안에 임시 Postgres 를 띄워 "현재 상태" 를 재현한다.
+    #        -> DB 접속 secret 불필요, 운영 사고 위험 0.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: rooter
+          POSTGRES_PASSWORD: localpass
+          POSTGRES_DB: rooter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U rooter -d rooter"
+          --health-interval=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: 127.0.0.1
+      DB_USER: rooter
+      DB_NAME: rooter
+      DB_PASSWORD: localpass
+      DDL_PATH: schema.sql
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # base 와 head 의 schema.sql 둘 다 필요
+
+      - name: Install psqldef + psql client
+        run: |
+          curl -fsSL https://github.com/sqldef/sqldef/releases/latest/download/psqldef_linux_amd64.tar.gz -o /tmp/psqldef.tar.gz
+          tar -xzf /tmp/psqldef.tar.gz -C /tmp psqldef
+          sudo mv /tmp/psqldef /usr/local/bin/psqldef
+          psqldef --version
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      # [노하우] base(=현재 운영 상태)는 psqldef 가 아니라 raw psql 로 적용한다.
+      #   이유: base 는 "이미 운영에서 돈 SQL". psqldef 로 넣으면 psqldef 가 제 식대로
+      #   normalize 해서 diff 가 왜곡될 수 있다. base 가 아직 없으면(첫 스키마 PR) 빈 DB 로 시작.
+      - name: Apply base schema (raw psql)
+        run: |
+          git show "origin/${{ github.base_ref }}:${DDL_PATH}" > /tmp/base.sql 2>/dev/null || : > /tmp/base.sql
+          if [ -s /tmp/base.sql ]; then
+            PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < /tmp/base.sql
+          else
+            echo "base 에 ${DDL_PATH} 없음 — 빈 DB 로 시작"
+          fi
+
+      # [왜] head(PR) 의 schema.sql 로 dry-run → 실제 실행될 ALTER/CREATE 만 출력(적용은 안 함)
+      - name: Dry-run head schema
+        run: |
+          PGPASSWORD="$DB_PASSWORD" psqldef -h "$DB_HOST" -U "$DB_USER" "$DB_NAME" --dry-run < "$DDL_PATH" | tee /tmp/plan.sql
+
+      - name: Compose comment
+        run: |
+          {
+            echo "### 📐 schema-check — psqldef dry-run"
+            echo ""
+            if grep -qi "Nothing is modified" /tmp/plan.sql || ! [ -s /tmp/plan.sql ]; then
+              echo "✅ **변경 없음** — base 대비 스키마 동일"
+            else
+              echo "머지 후 운영 DB 에 apply 하면 실행될 SQL:"
+              echo ""
+              echo '```sql'
+              cat /tmp/plan.sql
+              echo '```'
+            fi
+            echo ""
+            echo "_⚠️ CI 는 운영 DB 에 자동 적용하지 않습니다. 머지 후 책임자가 직접 실행하세요._"
+            echo "_파괴적 변경(DROP/타입변경)은 \`schema:destructive-ok\` 라벨이 있어야 통과합니다._"
+          } > /tmp/comment.md
+          cat /tmp/comment.md
+
+      - name: Post sticky comment
+        uses: marocchino/sticky-pull-request-comment@v2   # TODO: 커밋 SHA 로 pin 권장(공급망)
+        with:
+          header: schema-check                            # 이 header 덕에 push 마다 코멘트가 갱신됨(=sticky)
+          path: /tmp/comment.md
+
+      # [핵심 노하우] 데이터가 날아갈 수 있는 변경은 "라벨" 로 명시 승인 없으면 CI 를 실패시킨다.
+      #   diff 를 보여주는 데서 끝내지 않고, 위험한 변경에 사람의 명시적 OK 를 강제한다.
+      #   (라벨 schema:destructive-ok 를 repo 에 미리 만들어 두어야 동작)
+      - name: Gate destructive changes
+        env:
+          LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
+        run: |
+          if grep -Eqi '(DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|ALTER[[:space:]]+COLUMN.*TYPE)' /tmp/plan.sql; then
+            echo "⚠️  파괴적 변경 감지"
+            if echo "$LABELS" | grep -q '"schema:destructive-ok"'; then
+              echo "✅ 'schema:destructive-ok' 라벨 확인 — 통과"
+            else
+              echo "❌ 파괴적 변경인데 'schema:destructive-ok' 라벨이 없음 → 리뷰 후 라벨 붙이고 재실행"
+              exit 1
+            fi
+          else
+            echo "✅ 파괴적 변경 없음"
+          fi
