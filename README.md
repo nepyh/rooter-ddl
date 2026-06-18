@@ -26,8 +26,11 @@
 
 ```text
 rooter-ddl/
-├── README.md    # 📘 본 가이드 문서
-└── schema.sql   # 📄 우리 서비스의 최종 DB 설계도 (통짜 관리)
+├── .github/
+│   └── workflows/
+│       └── schema-check.yml   # 🤖 PR 스키마 변경 자동 검토 (psqldef dry-run)
+├── README.md                  # 📘 본 가이드 문서
+└── schema.sql                 # 📄 우리 서비스의 최종 DB 설계도 (통짜 관리)
 ```
 
 ---
@@ -107,3 +110,24 @@ CREATE TABLE example (
 - FK 컬럼에는 필요한 인덱스를 직접 생성한다.
 - Enum 성격의 컬럼은 허용 값을 주석으로 명시한다.
 - 주석 컨벤션을 통일하여 가독성을 유지한다.
+
+---
+
+## 🔁 스키마 변경 워크플로우 (PR → 검토 → 운영 적용)
+
+`schema.sql`을 바꾸는 PR은 `schema-check` GitHub Actions가 자동으로 검토합니다.
+
+1. 워킹 브랜치에서 `schema.sql`을 편집한다.
+2. PR을 생성한다 → **`schema-check`가 `psqldef --dry-run`으로 "실제 실행될 DDL"을 뽑아 sticky 코멘트로 게시**한다.
+   - CI 안에 임시 Postgres를 띄워 `main`의 schema를 재현한 뒤, PR의 schema와 비교한다. (운영 DB에 접속하지 않음 → secret 불필요, 사고 위험 0)
+3. 리뷰어가 그 SQL을 확인하고 머지한다.
+4. **머지 후, 책임자가 그 SQL을 운영 DB에 직접 실행한다.** (CI는 운영 DB에 자동 적용하지 않는다)
+5. 운영 반영이 끝난 상태가 곧 새 `main`이다.
+
+> ⚠️ **`main == 운영 DB` 원칙이 이 워크플로우의 생명줄입니다.** 4번을 건너뛰면 다음 PR의 diff가 거짓이 됩니다.
+> 운영 apply 책임자: `TODO(@___)` — 누가 할지 정해서 채워주세요.
+
+### ⛔ 파괴적 변경 (DROP / 타입 변경)
+
+`DROP TABLE`, `DROP COLUMN`, `ALTER COLUMN ... TYPE`처럼 **데이터가 손실될 수 있는 변경**은 PR에 `schema:destructive-ok` 라벨이 없으면 CI가 실패합니다.
+리뷰로 영향을 확인한 뒤 라벨을 붙이고 재실행하세요. (실수로 컬럼/테이블을 날리는 것을 막기 위한 안전장치입니다)
