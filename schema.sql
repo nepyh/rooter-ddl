@@ -46,7 +46,7 @@ create table student_profiles (
 create table user_unavailable_times (
     id int generated always as identity primary key,
     user_id int not null,
-    day_of_week smallint not null, -- EX: MONDAY, TUESDAY
+    day_of_week smallint not null, -- EX: 1 = "MONDAY", 2 = "TUESDAY"
     start_time time not null,
     end_time time not null,
     constraint fk_user_unavailable_times_user
