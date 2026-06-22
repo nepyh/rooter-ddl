@@ -1,21 +1,28 @@
 name: schema-check
 
-# [목적] schema.sql 이 바뀌는 PR 에서 "이 변경이 운영 DB 에 실제로 가할 DDL" 을
-#        psqldef dry-run 으로 미리 뽑아 PR 에 sticky 코멘트로 보여준다.
-#        + 데이터 손실이 날 수 있는 파괴적 변경은 라벨 없이는 통과시키지 않는다.
+# [목적] schema.sql 변경 PR 에서 "운영 DB 에 실제로 실행될 DDL" 을 psqldef 로 뽑아
+#        sticky 코멘트로 보여주고, 파괴적 변경은 라벨 없이는 통과시키지 않는다.
+#
+# [방식] 2-DB apply + export→dry-run (표현형 노이즈 0):
+#   base(머지 대상) schema → 임시 DB(schema_base), head(PR) schema → 임시 DB(schema_head)
+#   를 각각 raw psql 로 apply 한다. 그다음 head DB 를 `psqldef --export` 로 catalog(정규화)
+#   형태로 뽑아, 그것을 `psqldef --dry-run schema_base` 로 비교한다.
+#   -> 양쪽 다 catalog 형태라 'IN' vs '= ANY', 값 순서, 괄호 같은 표현 차이는 노이즈로
+#      안 뜨고 실제 실행될 ALTER 만 나온다.
+#   (이전 버전은 head 파일 텍스트 ↔ base catalog 를 비교해서 거짓 diff 가 떴었음)
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]   # 라벨 달면 재검사되도록
+    types: [opened, synchronize, reopened, labeled, unlabeled]   # 라벨 달면 재검사
     paths:
       - "schema.sql"
       - ".github/workflows/schema-check.yml"
 
-permissions:          # [노하우] 최소 권한 — sticky 코멘트 달 PR 쓰기 권한만
+permissions:          # [노하우] 최소 권한 — sticky 코멘트 달 PR 쓰기만
   contents: read
   pull-requests: write
 
-concurrency:          # [노하우] 같은 PR 에 연속 push 하면 이전 실행을 취소(자원 절약)
+concurrency:          # [노하우] 연속 push 시 이전 실행 취소
   group: schema-check-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
@@ -23,8 +30,7 @@ jobs:
   diff:
     runs-on: ubuntu-latest
 
-    # [핵심] 운영 DB 에 붙지 않는다. CI 안에 임시 Postgres 를 띄워 "현재 상태" 를 재현한다.
-    #        -> DB 접속 secret 불필요, 운영 사고 위험 0.
+    # [핵심] 운영 DB 에 붙지 않는다. CI 안 임시 Postgres 에 DB 2개를 만들어 비교한다.
     services:
       postgres:
         image: postgres:16
@@ -35,16 +41,19 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U rooter -d rooter"
+          --health-cmd="pg_isready -U rooter"
           --health-interval=5s
           --health-retries=10
 
     env:
-      DB_HOST: 127.0.0.1
-      DB_USER: rooter
-      DB_NAME: rooter
-      DB_PASSWORD: localpass
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: rooter
+      PGPASSWORD: localpass
       DDL_PATH: schema.sql
+      # [보안] base 브랜치명은 env 로 받는다. run: 본문에 ${{ }} 를 직접 보간하면
+      #        브랜치명에 심은 코드가 셸에서 실행될 수 있다(script injection).
+      BASE_REF: ${{ github.base_ref }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,30 +68,41 @@ jobs:
           psqldef --version
           sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
 
-      # [노하우] base(=현재 운영 상태)는 psqldef 가 아니라 raw psql 로 적용한다.
-      #   이유: base 는 "이미 운영에서 돈 SQL". psqldef 로 넣으면 psqldef 가 제 식대로
-      #   normalize 해서 diff 가 왜곡될 수 있다. base 가 아직 없으면(첫 스키마 PR) 빈 DB 로 시작.
-      - name: Apply base schema (raw psql)
+      # base·head schema 를 각각 별도 임시 DB 에 raw psql 로 적용한다.
+      - name: Apply base & head schema to two DBs
         run: |
-          git show "origin/${{ github.base_ref }}:${DDL_PATH}" > /tmp/base.sql 2>/dev/null || : > /tmp/base.sql
-          if [ -s /tmp/base.sql ]; then
-            PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < /tmp/base.sql
-          else
-            echo "base 에 ${DDL_PATH} 없음 — 빈 DB 로 시작"
+          set -euo pipefail
+          # base(머지 대상) schema 추출 — base 에 파일이 없으면(첫 스키마 PR) 빈 스키마로 시작
+          git show "origin/${BASE_REF}:${DDL_PATH}" > /tmp/base_ddl.sql 2>/dev/null || : > /tmp/base_ddl.sql
+
+          # [보안] psql 메타커맨드(\! 셸 escape, \copy 등)가 DDL 에 섞이면 runner 가 위험 → 거부
+          if grep -qE '^[[:space:]]*\\' /tmp/base_ddl.sql "$DDL_PATH"; then
+            echo "::error::DDL 에 psql 메타커맨드(\\...) 가 포함됨 — apply 거부"; exit 1
           fi
 
-      # [왜] head(PR) 의 schema.sql 로 dry-run → 실제 실행될 ALTER/CREATE 만 출력(적용은 안 함)
-      - name: Dry-run head schema
+          apply_db() {   # $1=DB 이름, $2=DDL 파일
+            psql -d rooter -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE \"$1\""
+            if [ -s "$2" ]; then psql -d "$1" -v ON_ERROR_STOP=1 -q -f "$2"; fi
+          }
+          apply_db schema_base /tmp/base_ddl.sql
+          apply_db schema_head "$DDL_PATH"
+
+      # head DB 를 catalog 형태로 export → base DB 에 dry-run (catalog ↔ catalog 비교)
+      - name: Compute migration plan
         run: |
-          PGPASSWORD="$DB_PASSWORD" psqldef -h "$DB_HOST" -U "$DB_USER" "$DB_NAME" --dry-run < "$DDL_PATH" | tee /tmp/plan.sql
+          set -euo pipefail
+          # (psqldef 의 generic parser WARN 은 stderr 노이즈라 묻는다)
+          psqldef -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" --export schema_head 2>/dev/null > /tmp/canon_head.sql
+          psqldef -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" --dry-run schema_base < /tmp/canon_head.sql 2>/dev/null > /tmp/plan.sql
+          cat /tmp/plan.sql
 
       - name: Compose comment
         run: |
           {
-            echo "### 📐 schema-check — psqldef dry-run"
+            echo "### 📐 schema-check — psqldef migration plan (base → head)"
             echo ""
-            if grep -qi "Nothing is modified" /tmp/plan.sql || ! [ -s /tmp/plan.sql ]; then
-              echo "✅ **변경 없음** — base 대비 스키마 동일"
+            if grep -qi "Nothing is modified" /tmp/plan.sql || ! grep -qiE 'create|alter|drop' /tmp/plan.sql; then
+              echo "✅ **변경 없음** — base 대비 스키마 동일 (표현형 차이는 무시됨)"
             else
               echo "머지 후 운영 DB 에 apply 하면 실행될 SQL:"
               echo ""
@@ -97,18 +117,18 @@ jobs:
           cat /tmp/comment.md
 
       - name: Post sticky comment
-        uses: marocchino/sticky-pull-request-comment@v2   # TODO: 커밋 SHA 로 pin 권장(공급망)
+        uses: marocchino/sticky-pull-request-comment@v2   # TODO: 커밋 SHA 로 pin 권장
         with:
           header: schema-check                            # 이 header 덕에 push 마다 코멘트가 갱신됨(=sticky)
           path: /tmp/comment.md
 
-      # [핵심 노하우] 데이터가 날아갈 수 있는 변경은 "라벨" 로 명시 승인 없으면 CI 를 실패시킨다.
-      #   diff 를 보여주는 데서 끝내지 않고, 위험한 변경에 사람의 명시적 OK 를 강제한다.
+      # [핵심 노하우] 데이터가 날아갈 수 있는 변경은 라벨로 명시 승인 없으면 CI 를 실패시킨다.
       #   (라벨 schema:destructive-ok 를 repo 에 미리 만들어 두어야 동작)
       - name: Gate destructive changes
         env:
           LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
+          # psqldef 는 DROP 을 `-- Skipped ... DROP TABLE/COLUMN` 주석으로 표시하기도 하므로 그 줄도 매치
           if grep -Eqi '(DROP[[:space:]]+TABLE|DROP[[:space:]]+COLUMN|ALTER[[:space:]]+COLUMN.*TYPE)' /tmp/plan.sql; then
             echo "⚠️  파괴적 변경 감지"
             if echo "$LABELS" | grep -q '"schema:destructive-ok"'; then
