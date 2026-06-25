@@ -2,11 +2,6 @@
 -- 공통 및 마스터 도메인 (기반 데이터)
 -- =============================================================================
 
-create table schools (
-    id int generated always as identity primary key,
-    name varchar(30) not null unique
-);
-
 create table publishers (
     id int generated always as identity primary key,
     name varchar(50) not null unique
@@ -34,13 +29,11 @@ create table users (
 create table student_profiles (
     id int generated always as identity primary key,
     user_id int not null,
-    school_id int not null, -- 텍스트 대신 외래키 참조
+    school_id char(10) not null,
     grade int not null,
     class_number int not null,
     constraint fk_student_profiles_user
         foreign key (user_id) references users(id) on delete cascade,
-    constraint fk_student_profiles_school
-        foreign key (school_id) references schools(id)
 );
 
 create table user_unavailable_times (
