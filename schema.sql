@@ -32,8 +32,9 @@ create table student_profiles (
     school_id char(10) not null,
     grade int not null,
     class_number int not null,
+    study_style varchar(50),
     constraint fk_student_profiles_user
-        foreign key (user_id) references users(id) on delete cascade,
+        foreign key (user_id) references users(id) on delete cascade
 );
 
 create table user_unavailable_times (
