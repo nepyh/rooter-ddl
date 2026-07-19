@@ -23,6 +23,7 @@ create table users (
     password char(60) not null,
     avatar_image_key varchar(255),
     bio varchar(500),
+    token_version int not null,
     created_at timestamp with time zone default current_timestamp
 );
 
