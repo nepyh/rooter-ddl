@@ -19,7 +19,7 @@ create table subjects (
 create table users (
     id int generated always as identity primary key,
     email varchar(320) not null unique,
-    username varchar(12) not null unique,
+    username varchar(12) not null,
     password char(60) not null,
     avatar_image_key varchar(255),
     bio varchar(500),
