@@ -160,3 +160,23 @@ create table plan_tasks (
 
 create index idx_daily_plans_board_id on daily_plans(plan_board_id);
 create index idx_plan_tasks_daily_plan_id on plan_tasks(daily_plan_id);
+-- =============================================================================
+-- scheduler 도메인
+-- =============================================================================
+
+create table job_runs (
+    id int generated always as identity primary key,
+    job_type varchar(50) not null,
+    run_key varchar(255) not null,
+    status varchar(20) not null default 'pending',
+    scheduled_at timestamp with time zone not null,
+    fired_at timestamp with time zone,
+    finished_at timestamp with time zone,
+    retry_count int not null default 0,
+    last_error text,
+    payload text not null default '{}',
+    created_at timestamp with time zone default current_timestamp,
+    constraint uq_job_runs_type_key unique (job_type, run_key)
+);
+
+create index idx_job_runs_status on job_runs(status);
