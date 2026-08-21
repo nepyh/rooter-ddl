@@ -143,7 +143,8 @@ create table daily_plans (
     plan_board_id int not null,
     plan_date date not null,
     constraint fk_daily_plans_board
-        foreign key (plan_board_id) references plan_boards(id) on delete cascade
+        foreign key (plan_board_id) references plan_boards(id) on delete cascade,
+    constraint uq_daily_plans_board_date unique (plan_board_id, plan_date)
 );
 
 create table plan_tasks (
