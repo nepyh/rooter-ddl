@@ -292,6 +292,22 @@ create table daily_feedback (
 create index idx_daily_feedback_daily_plan_id on daily_feedback(daily_plan_id);
 
 -- =============================================================================
+-- AI 챗봇 도메인 (하루 계획 재조정 대화)
+-- =============================================================================
+
+create table chat_turns (
+    id int generated always as identity primary key,
+    daily_plan_id int not null,
+    role varchar(10) not null, -- "user" | "assistant"
+    content text not null,
+    created_at timestamp with time zone default current_timestamp,
+    constraint fk_chat_turns_daily_plan
+        foreign key (daily_plan_id) references daily_plans(id) on delete cascade
+);
+
+create index idx_chat_turns_daily_plan_id on chat_turns(daily_plan_id);
+
+-- =============================================================================
 -- 태스크 완료 확인 퀴즈 도메인 (태스크 종료 시각에 자동으로 뜨는 퀴즈, 일일 퀴즈와는 별개 기능)
 -- =============================================================================
 
