@@ -89,6 +89,25 @@ create index idx_textbooks_subject_id on textbooks(subject_id);
 create index idx_chapters_textbook_id on chapters(textbook_id);
 
 -- =============================================================================
+-- 학교-교과서 매핑 도메인 (학교+학년별 채택 교과서. NICE API 가 못 주는 정보라 직접 입력)
+-- =============================================================================
+
+create table school_textbook_adoptions (
+    id int generated always as identity primary key,
+    school_id char(10) not null,
+    grade int not null,
+    subject_id int not null,
+    textbook_id int not null,
+    constraint fk_school_textbook_adoptions_subject
+        foreign key (subject_id) references subjects(id) on delete cascade,
+    constraint fk_school_textbook_adoptions_textbook
+        foreign key (textbook_id) references textbooks(id) on delete cascade,
+    constraint uq_school_textbook_adoption unique (school_id, grade, subject_id)
+);
+
+create index idx_school_textbook_adoptions_school_grade on school_textbook_adoptions(school_id, grade);
+
+-- =============================================================================
 -- ai 계획 생성 도메인
 -- =============================================================================
 
