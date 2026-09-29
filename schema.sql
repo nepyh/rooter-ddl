@@ -62,7 +62,7 @@ create table textbooks (
     subject_id int not null,
     publisher_id int, -- 외래키 참조로 변경
     title varchar(150) not null,
-    file_url varchar(500),
+    cover_image_key varchar(255), -- 파일 스토리지 키 (URL 아님 — 응답에서 만든 URL 을 내려줌)
     ai_status varchar(20) default 'pending',
     created_at timestamp with time zone default current_timestamp,
     constraint fk_textbooks_subject
