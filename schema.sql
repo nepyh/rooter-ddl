@@ -262,6 +262,7 @@ create table daily_quiz_questions (
     id int generated always as identity primary key,
     daily_plan_id int not null,
     question_text text not null,
+    explanation text, -- 풀이 과정 (제출 후 오답 풀이로 보여줌). 이 컬럼 추가 전에 만든 퀴즈는 NULL
     constraint fk_daily_quiz_questions_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade
 );
