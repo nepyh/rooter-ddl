@@ -347,6 +347,9 @@ create table task_quiz_questions (
     id int generated always as identity primary key,
     attempt_id int not null,
     question_text text not null,
+    -- 학생이 고른 보기 (문제마다 답할 때 저장, 한 번 저장되면 바꿀 수 없음). NULL = 아직 안 답함.
+    -- task_quiz_choices 가 이 테이블을 참조하는 순환 관계라 FK 는 걸지 않고, 자기 문제의 보기인지는 서버가 검증한다
+    selected_choice_id int,
     constraint fk_task_quiz_questions_attempt
         foreign key (attempt_id) references task_quiz_attempts(id) on delete cascade
 );
