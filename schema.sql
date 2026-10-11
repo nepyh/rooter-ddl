@@ -372,6 +372,42 @@ create index idx_task_quiz_questions_attempt_id on task_quiz_questions(attempt_i
 create index idx_task_quiz_choices_question_id on task_quiz_choices(question_id);
 
 -- =============================================================================
+-- 복습 퀴즈 도메인 (일일·태스크 퀴즈에서 틀린 문제 + 약점 기반 맞춤 문제를 다시 푸는 목록)
+-- =============================================================================
+
+create table review_questions (
+    id int generated always as identity primary key,
+    user_id int not null,
+    source varchar(20) not null, -- DAILY_QUIZ / TASK_QUIZ = 틀린 문제를 복사, CUSTOM = 약점 분석으로 만든 맞춤 문제
+    -- 원본 문항 id (DAILY_QUIZ = daily_quiz_questions.id, TASK_QUIZ = task_quiz_questions.id, CUSTOM = NULL).
+    -- 원본 퀴즈가 지워져도 복습 문제는 남도록 FK 는 걸지 않는다
+    source_question_id int,
+    chapter_name varchar(100), -- 맞춤 문제의 약점 단원. 틀린 문제 복사분은 NULL
+    question_text text not null,
+    explanation text, -- 문제의 자세한 풀이 (예전 일일 퀴즈는 NULL)
+    wrong_count int not null default 0, -- 복습에서 틀린 횟수
+    created_at timestamp with time zone default current_timestamp,
+    cleared_at timestamp with time zone, -- 복습에서 맞힌 시각. NULL = 아직 복습 목록에 있음
+    constraint fk_review_questions_user
+        foreign key (user_id) references users(id) on delete cascade,
+    -- 같은 원본 문항을 두 번 복사하지 않게 (CUSTOM 은 source_question_id 가 NULL 이라 제약을 받지 않음)
+    constraint uq_review_questions_source unique (source, source_question_id)
+);
+
+create table review_choices (
+    id int generated always as identity primary key,
+    review_question_id int not null,
+    choice_text varchar(200) not null,
+    is_correct boolean not null default false,
+    reason text, -- 이 오답 보기를 골랐을 때 보여줄 짧은 이유 (태스크 퀴즈 복사분·맞춤 문제). 정답 보기·일일 퀴즈 복사분은 NULL
+    constraint fk_review_choices_question
+        foreign key (review_question_id) references review_questions(id) on delete cascade
+);
+
+create index idx_review_questions_user_open on review_questions(user_id, id) where cleared_at is null;
+create index idx_review_choices_question_id on review_choices(review_question_id);
+
+-- =============================================================================
 -- 캘린더 개인 일정 도메인
 -- =============================================================================
 
