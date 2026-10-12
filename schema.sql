@@ -266,6 +266,7 @@ create table daily_quiz_questions (
     daily_plan_id int not null,
     question_text text not null,
     explanation text, -- 풀이 과정 (제출 후 오답 풀이로 보여줌). 이 컬럼 추가 전에 만든 퀴즈는 NULL
+    chapter_name varchar(150), -- 이 문제가 다루는 학습 범위 단원 (단원별 오답률 리포트 기준). 범위 밖이거나 이 컬럼 추가 전에 만든 퀴즈는 NULL
     constraint fk_daily_quiz_questions_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade
 );
@@ -353,6 +354,7 @@ create table task_quiz_questions (
     -- 학생이 고른 보기 (문제마다 답할 때 저장, 한 번 저장되면 바꿀 수 없음). NULL = 아직 안 답함.
     -- task_quiz_choices 가 이 테이블을 참조하는 순환 관계라 FK 는 걸지 않고, 자기 문제의 보기인지는 서버가 검증한다
     selected_choice_id int,
+    chapter_name varchar(150), -- 이 문제가 다루는 학습 범위 단원 (단원별 오답률 리포트 기준). 범위 밖이거나 이 컬럼 추가 전에 만든 퀴즈는 NULL
     constraint fk_task_quiz_questions_attempt
         foreign key (attempt_id) references task_quiz_attempts(id) on delete cascade
 );
@@ -382,7 +384,7 @@ create table review_questions (
     -- 원본 문항 id (DAILY_QUIZ = daily_quiz_questions.id, TASK_QUIZ = task_quiz_questions.id, CUSTOM = NULL).
     -- 원본 퀴즈가 지워져도 복습 문제는 남도록 FK 는 걸지 않는다
     source_question_id int,
-    chapter_name varchar(100), -- 맞춤 문제의 약점 단원. 틀린 문제 복사분은 NULL
+    chapter_name varchar(150), -- 문제의 단원. 맞춤 문제는 약점 단원, 틀린 문제 복사분은 원본 문항의 chapter_name (없으면 NULL)
     question_text text not null,
     explanation text, -- 문제의 자세한 풀이 (예전 일일 퀴즈는 NULL)
     wrong_count int not null default 0, -- 복습에서 틀린 횟수
