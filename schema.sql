@@ -24,6 +24,10 @@ create table users (
     avatar_image_key varchar(255),
     bio varchar(500),
     token_version int not null default 0,
+    -- 수면시간 (취침·기상 시각). 둘 다 NULL = 설정 안 함 → 서버 기본값 23:00 / 06:30.
+    -- 자정을 넘는 취침(예: 01:00 취침, 07:00 기상)도 그대로 저장하고 해석은 서버가 한다
+    sleep_time time,
+    wake_time time,
     created_at timestamp with time zone default current_timestamp
 );
 
