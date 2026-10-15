@@ -179,12 +179,18 @@ create table plan_tasks (
     -- 챗봇으로 다른 날로 미뤘을 때 원래 날짜. NULL = 미룬 적 없음.
     -- 바로 전날에서 미뤄져 온 할일(postponed_from_date = 지금 날짜 - 1일)은 이틀 연속 미루지 못하게 서버가 막는다
     postponed_from_date date,
+    -- 할일이 속한 과목. NULL = 과목 미지정(복습·재조정·챗봇 미루기로 파생된 할일, 컬럼 추가 전에 만든 행).
+    -- 목록 조회에서 과목별로 묶어 제목(과목명)을 보여주는 데 쓴다
+    subject_id int,
     constraint fk_plan_tasks_daily_plan
-        foreign key (daily_plan_id) references daily_plans(id) on delete cascade
+        foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
+    constraint fk_plan_tasks_subject
+        foreign key (subject_id) references subjects(id) on delete set null
 );
 
 create index idx_daily_plans_board_id on daily_plans(plan_board_id);
 create index idx_plan_tasks_daily_plan_id on plan_tasks(daily_plan_id);
+create index idx_plan_tasks_subject_id on plan_tasks(subject_id);
 
 -- =============================================================================
 -- 공부스타일 설문 도메인
