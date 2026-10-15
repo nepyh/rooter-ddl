@@ -179,6 +179,8 @@ create table plan_tasks (
     -- 챗봇으로 다른 날로 미뤘을 때 원래 날짜. NULL = 미룬 적 없음.
     -- 바로 전날에서 미뤄져 온 할일(postponed_from_date = 지금 날짜 - 1일)은 이틀 연속 미루지 못하게 서버가 막는다
     postponed_from_date date,
+    -- 실패 여부. true = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격). is_completed 와 동시에 true 가 되지 않게 서버가 막는다
+    is_failed boolean not null default false,
     constraint fk_plan_tasks_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade
 );
