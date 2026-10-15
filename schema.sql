@@ -343,6 +343,7 @@ create table task_quiz_attempts (
     correct_count int, -- null = 아직 채점 전(미제출)
     passed boolean, -- null = 미제출, true/false = 채점 결과 (5문항 중 4개 이상 = true)
     created_at timestamp with time zone default current_timestamp,
+    submitted_at timestamp with time zone, -- 채점(제출) 시각. null = 아직 채점 전. 이 컬럼 추가 전에 푼 퀴즈는 null
     constraint fk_task_quiz_attempts_plan_task
         foreign key (plan_task_id) references plan_tasks(id) on delete cascade
 );
