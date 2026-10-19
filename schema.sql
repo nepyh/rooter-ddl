@@ -315,12 +315,18 @@ create index idx_daily_quiz_attempts_user_id on daily_quiz_attempts(user_id);
 create table daily_feedback (
     id int generated always as identity primary key,
     daily_plan_id int not null,
+    -- 어느 할일의 설문인지. NULL = 이 컬럼 추가 전에 만들어진 기존 행
+    plan_task_id int,
     difficulty varchar(10) not null,
     time_spent_minutes int,
     focus_level smallint,
     created_at timestamp with time zone default current_timestamp,
     constraint fk_daily_feedback_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
+    constraint fk_daily_feedback_plan_task
+        foreign key (plan_task_id) references plan_tasks(id) on delete cascade,
+    constraint uq_daily_feedback_plan_task
+        unique (plan_task_id),
     constraint chk_daily_feedback_difficulty
         check (difficulty in ('쉬움', '적당', '어려움'))
 );
