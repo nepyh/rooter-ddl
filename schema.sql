@@ -24,6 +24,10 @@ create table users (
     avatar_image_key varchar(255),
     bio varchar(500),
     token_version int not null default 0,
+    -- 수면시간 (취침·기상 시각). 둘 다 NULL = 설정 안 함 → 서버 기본값 23:00 / 06:30.
+    -- 자정을 넘는 취침(예: 01:00 취침, 07:00 기상)도 그대로 저장하고 해석은 서버가 한다
+    sleep_time time,
+    wake_time time,
     created_at timestamp with time zone default current_timestamp
 );
 
@@ -182,6 +186,8 @@ create table plan_tasks (
     -- 할일이 속한 과목. NULL = 과목 미지정(복습·재조정·챗봇 미루기로 파생된 할일, 컬럼 추가 전에 만든 행).
     -- 목록 조회에서 과목별로 묶어 제목(과목명)을 보여주는 데 쓴다
     subject_id int,
+    -- 실패 여부. true = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격). is_completed 와 동시에 true 가 되지 않게 서버가 막는다
+    is_failed boolean not null default false,
     constraint fk_plan_tasks_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
     constraint fk_plan_tasks_subject
