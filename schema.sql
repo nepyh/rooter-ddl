@@ -179,6 +179,7 @@ create table plan_tasks (
     start_time time not null,
     end_time time not null,
     estimated_minutes int not null,
+    -- [제거 예정] status 로 대체. 서버가 status 만 쓰도록 배포된 뒤 다음 PR 에서 삭제한다
     is_completed boolean default false,
     -- 챗봇으로 다른 날로 미뤘을 때 원래 날짜. NULL = 미룬 적 없음.
     -- 바로 전날에서 미뤄져 온 할일(postponed_from_date = 지금 날짜 - 1일)은 이틀 연속 미루지 못하게 서버가 막는다
@@ -186,12 +187,16 @@ create table plan_tasks (
     -- 할일이 속한 과목. NULL = 과목 미지정(복습·재조정·챗봇 미루기로 파생된 할일, 컬럼 추가 전에 만든 행).
     -- 목록 조회에서 과목별로 묶어 제목(과목명)을 보여주는 데 쓴다
     subject_id int,
-    -- 실패 여부. true = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격). is_completed 와 동시에 true 가 되지 않게 서버가 막는다
+    -- [제거 예정] status 로 대체 (서버가 쓴 적 없음). 다음 PR 에서 is_completed 와 함께 삭제한다
     is_failed boolean not null default false,
+    -- 할일 상태. PENDING = 대기, DONE = 완료(태스크 퀴즈 통과), FAILED = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격)
+    status varchar(20) not null default 'PENDING',
     constraint fk_plan_tasks_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
     constraint fk_plan_tasks_subject
-        foreign key (subject_id) references subjects(id) on delete set null
+        foreign key (subject_id) references subjects(id) on delete set null,
+    constraint chk_plan_tasks_status
+        check (status in ('PENDING', 'DONE', 'FAILED'))
 );
 
 create index idx_daily_plans_board_id on daily_plans(plan_board_id);
