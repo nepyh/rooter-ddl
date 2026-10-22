@@ -28,7 +28,12 @@ create table users (
     -- 자정을 넘는 취침(예: 01:00 취침, 07:00 기상)도 그대로 저장하고 해석은 서버가 한다
     sleep_time time,
     wake_time time,
-    created_at timestamp with time zone default current_timestamp
+    -- 하교 후 집에 도착하기까지 걸리는 시간(분). NULL = 설정 안 함 → 서버 기본값 40분.
+    -- 등교일은 하교 시각부터 이 시간만큼 할일을 잡지 않는다
+    commute_minutes smallint,
+    created_at timestamp with time zone default current_timestamp,
+    constraint chk_users_commute_minutes
+        check (commute_minutes between 0 and 180)
 );
 
 create table student_profiles (
@@ -48,10 +53,16 @@ create table user_unavailable_times (
     day_of_week smallint not null, -- EX: 1 = "MONDAY", 2 = "TUESDAY"
     start_time time not null,
     end_time time not null,
+    -- 불가능 시간의 종류. BREAKFAST / LUNCH / DINNER = 아침·점심·저녁 식사, ACADEMY = 학원, CUSTOM = 그 밖의 일정.
+    -- 그 요일에 식사를 등록하지 않으면 서버 기본값(아침 기상 후 30분, 점심 12:00~13:00, 저녁 18:00~19:00)을 쓴다
+    kind varchar(20) not null default 'CUSTOM',
+    label varchar(50), -- 사용자가 붙인 이름 (예: "수학 학원"). NULL 이면 앱이 kind 로 이름을 보여준다
     constraint fk_user_unavailable_times_user
         foreign key (user_id) references users(id) on delete cascade,
     constraint chk_day_of_week
-        check (day_of_week between 1 and 7)
+        check (day_of_week between 1 and 7),
+    constraint chk_user_unavailable_times_kind
+        check (kind in ('BREAKFAST', 'LUNCH', 'DINNER', 'ACADEMY', 'CUSTOM'))
 );
 
 create index idx_student_profiles_user_id on student_profiles(user_id);
