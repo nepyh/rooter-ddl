@@ -65,8 +65,25 @@ create table user_unavailable_times (
         check (kind in ('BREAKFAST', 'LUNCH', 'DINNER', 'ACADEMY', 'CUSTOM'))
 );
 
+-- 약관·개인정보 동의 이력. append-only — 재동의·철회도 새 행으로 남기고, code 별 가장 최근 행이 현재 유효한 동의다.
+-- code 는 서버 enum 이름(대문자)을 그대로 쓴다: TERMS(이용약관) / PRIVACY(개인정보 처리방침).
+-- 조항이 늘어나도 행만 늘면 되므로 check 제약을 두지 않는다 (보호자 동의 GUARDIAN·선택 동의 MARKETING 도 같은 방법으로 추가).
+-- 문서 본문은 DB 에 두지 않는다 — 버전별 고정 URL 의 정적 페이지가 정본이고, 여기에는 버전 문자열만 남긴다.
+create table user_agreements (
+    id int generated always as identity primary key,
+    user_id int not null, -- 탈퇴 시 함께 삭제
+    code varchar(40) not null,
+    version varchar(20) not null, -- 동의한 약관 버전. 예: '2026-11-01'
+    required boolean not null, -- 동의 시점의 필수 여부 스냅샷. 나중에 선택으로 바뀌어도 그때 필수였던 사실이 남는다
+    agreed boolean not null, -- 선택 동의의 거부·철회도 false 로 기록한다 (행 없음 = 한 번도 안 물어봄)
+    created_at timestamp with time zone not null default now(),
+    constraint fk_user_agreements_user
+        foreign key (user_id) references users(id) on delete cascade
+);
+
 create index idx_student_profiles_user_id on student_profiles(user_id);
 create index idx_user_unavailable_times_user_id on user_unavailable_times(user_id);
+create index idx_user_agreements_user_code on user_agreements(user_id, code, created_at desc);
 
 -- =============================================================================
 -- 교과서 및 과목 도메인
