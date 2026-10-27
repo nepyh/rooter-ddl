@@ -219,12 +219,17 @@ create table plan_tasks (
     is_failed boolean not null default false,
     -- 할일 상태. PENDING = 대기, DONE = 완료(태스크 퀴즈 통과), FAILED = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격)
     status varchar(20) not null default 'PENDING',
+    -- 할일 생성 출처. USER = 사용자가 직접 추가(챗봇이 만든 할일 포함), AI = 서버 AI 가 만듦(계획 생성·재조정 보충·퀴즈 복습).
+    -- AI 가 만든 할일은 삭제할 수 없다. 컬럼 추가 전에 만든 행은 USER 로 백필한다
+    origin varchar(20) not null default 'USER',
     constraint fk_plan_tasks_daily_plan
         foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
     constraint fk_plan_tasks_subject
         foreign key (subject_id) references subjects(id) on delete set null,
     constraint chk_plan_tasks_status
-        check (status in ('PENDING', 'DONE', 'FAILED'))
+        check (status in ('PENDING', 'DONE', 'FAILED')),
+    constraint chk_plan_tasks_origin
+        check (origin in ('USER', 'AI'))
 );
 
 create index idx_daily_plans_board_id on daily_plans(plan_board_id);
