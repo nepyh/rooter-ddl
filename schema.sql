@@ -480,6 +480,62 @@ create index idx_calendar_events_user_id on calendar_events(user_id);
 create index idx_calendar_events_date on calendar_events(event_date);
 
 -- =============================================================================
+-- 알림 도메인
+-- =============================================================================
+
+-- 기기별 Expo 푸시 토큰. 한 사용자가 기기를 여러 대 쓸 수 있어 행이 여러 개다.
+-- 토큰은 기기(앱 설치)마다 하나라 전체에서 유일하다 — 같은 폰에서 다른 계정으로 로그인하면 서버가 user_id 를 새 계정으로 옮긴다.
+-- 로그아웃하면 지우고, Expo 가 DeviceNotRegistered(앱 삭제 등)를 돌려주면 서버가 지운다.
+create table user_device_tokens (
+    id int generated always as identity primary key,
+    user_id int not null, -- 탈퇴 시 함께 삭제
+    token varchar(255) not null unique, -- 예: 'ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]'
+    platform varchar(10) not null, -- IOS / ANDROID
+    created_at timestamp with time zone not null default now(),
+    last_seen_at timestamp with time zone not null default now(), -- 앱이 토큰을 다시 등록할 때마다 갱신. 오래 안 쓴 토큰 정리용
+    constraint fk_user_device_tokens_user
+        foreign key (user_id) references users(id) on delete cascade,
+    constraint chk_user_device_tokens_platform
+        check (platform in ('IOS', 'ANDROID'))
+);
+
+-- 사용자별 알림 설정. 행 없음 = 기본값(알림 켜짐, 5분 전) — 설정을 한 번이라도 바꾼 사용자만 행이 생긴다.
+-- 알림 종류가 늘면 종류별 on/off 컬럼을 추가한다.
+create table notification_settings (
+    user_id int primary key, -- 사용자당 1행. 탈퇴 시 함께 삭제
+    task_reminder_enabled boolean not null default true, -- 할일 시작 전 알림
+    task_reminder_lead_minutes smallint not null default 5, -- 할일 시작 몇 분 전에 보낼지
+    updated_at timestamp with time zone not null default now(),
+    constraint fk_notification_settings_user
+        foreign key (user_id) references users(id) on delete cascade,
+    constraint chk_notification_settings_lead_minutes
+        check (task_reminder_lead_minutes between 0 and 60)
+);
+
+-- 알림함. 서버가 보낸 모든 알림을 남긴다 — 앱 안 배너·알림 목록·안 읽은 개수가 이 테이블을 본다.
+-- 푸시 발송 여부와 상관없이 저장한다 (설정으로 푸시를 꺼도 알림함에는 남는다).
+-- type 은 서버 enum 이름(대문자)을 그대로 쓴다: TASK_REMINDER(할일 시작 전).
+-- 종류가 늘어날 값이라 user_agreements.code 처럼 check 제약을 두지 않고 서버가 검증한다.
+create table notifications (
+    id int generated always as identity primary key,
+    user_id int not null, -- 탈퇴 시 함께 삭제
+    type varchar(40) not null,
+    title varchar(100) not null,
+    body varchar(500) not null,
+    -- 앱이 알림을 눌렀을 때 이동할 대상 등 부가 정보 (JSON 문자열). 예: '{"planTaskId": 12}'.
+    -- job_runs.payload 와 같이 text 로 둔다 — 서버가 내용으로 조회하지 않는다
+    data text not null default '{}',
+    read_at timestamp with time zone, -- NULL = 안 읽음
+    created_at timestamp with time zone not null default now(),
+    constraint fk_notifications_user
+        foreign key (user_id) references users(id) on delete cascade
+);
+
+create index idx_user_device_tokens_user_id on user_device_tokens(user_id);
+create index idx_notifications_user_created on notifications(user_id, created_at desc); -- 알림함 목록 (최신순)
+create index idx_notifications_user_unread on notifications(user_id) where read_at is null; -- 안 읽은 개수
+
+-- =============================================================================
 -- scheduler 도메인
 -- =============================================================================
 
