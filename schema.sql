@@ -375,17 +375,39 @@ create index idx_daily_feedback_daily_plan_id on daily_feedback(daily_plan_id);
 -- AI 챗봇 도메인 (하루 계획 재조정 대화)
 -- =============================================================================
 
+-- 챗봇 대화 세션 (rooter-back #342). 날짜와 상관없는 유저 전체 목록이고, 세션마다 대화(chat_turns)가 따로 쌓인다.
+-- title 은 세션 첫 메시지에서 정해진다 (그전엔 null). updated_at 은 마지막 대화 시각 (목록 정렬용)
+create table chat_sessions (
+    id int generated always as identity primary key,
+    user_id int not null,
+    title varchar(100),
+    created_at timestamp with time zone not null default current_timestamp,
+    updated_at timestamp with time zone not null default current_timestamp,
+    constraint fk_chat_sessions_user
+        foreign key (user_id) references users(id) on delete cascade
+);
+
+create index idx_chat_sessions_user_id_updated_at on chat_sessions(user_id, updated_at);
+
+-- daily_plan_id: 그 메시지로 어느 날 계획을 보고 고쳤는지 / session_id: 어느 대화에 속하는지 (#342)
+-- session_id 는 기존 대화를 세션으로 옮긴 뒤 다음 PR 에서 not null 로 바꾼다
 create table chat_turns (
     id int generated always as identity primary key,
     daily_plan_id int not null,
+    session_id int,
     role varchar(10) not null, -- "user" | "assistant"
     content text not null,
+    feedback varchar(10), -- 챗봇 답변의 좋아요·싫어요: 'LIKE' | 'DISLIKE' | null
     created_at timestamp with time zone default current_timestamp,
     constraint fk_chat_turns_daily_plan
-        foreign key (daily_plan_id) references daily_plans(id) on delete cascade
+        foreign key (daily_plan_id) references daily_plans(id) on delete cascade,
+    constraint fk_chat_turns_session
+        foreign key (session_id) references chat_sessions(id) on delete cascade,
+    constraint chk_chat_turns_feedback check (feedback in ('LIKE', 'DISLIKE'))
 );
 
 create index idx_chat_turns_daily_plan_id on chat_turns(daily_plan_id);
+create index idx_chat_turns_session_id on chat_turns(session_id);
 
 -- =============================================================================
 -- 태스크 완료 확인 퀴즈 도메인 (태스크 종료 시각에 자동으로 뜨는 퀴즈, 일일 퀴즈와는 별개 기능)
