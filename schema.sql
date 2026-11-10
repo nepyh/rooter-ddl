@@ -44,7 +44,9 @@ create table student_profiles (
     class_number int not null,
     study_style varchar(50),
     constraint fk_student_profiles_user
-        foreign key (user_id) references users(id) on delete cascade
+        foreign key (user_id) references users(id) on delete cascade,
+    -- 유저당 프로필 1개. 서버는 다시 등록하면 기존 행을 덮어쓴다
+    constraint uq_student_profiles_user unique (user_id)
 );
 
 create table user_unavailable_times (
@@ -81,7 +83,6 @@ create table user_agreements (
         foreign key (user_id) references users(id) on delete cascade
 );
 
-create index idx_student_profiles_user_id on student_profiles(user_id);
 create index idx_user_unavailable_times_user_id on user_unavailable_times(user_id);
 create index idx_user_agreements_user_code on user_agreements(user_id, code, created_at desc);
 
@@ -102,7 +103,9 @@ create table textbooks (
     constraint fk_textbooks_publisher
         foreign key (publisher_id) references publishers(id) on delete set null,
     constraint chk_ai_status
-        check (ai_status in ('pending', 'processing', 'completed', 'failed')) -- 상태값 검증 제약 추가
+        check (ai_status in ('pending', 'processing', 'completed', 'failed')), -- 상태값 검증 제약 추가
+    -- 복합 FK 대상: 학교 채택의 (과목, 교과서) 가 실제 그 과목의 교과서인지 DB 가 검증한다
+    constraint uq_textbooks_subject_id unique (subject_id, id)
 );
 
 create table chapters (
@@ -114,7 +117,9 @@ create table chapters (
     constraint fk_chapters_textbook
         foreign key (textbook_id) references textbooks(id) on delete cascade,
     constraint fk_chapters_parent
-        foreign key (parent_id) references chapters(id) on delete set null
+        foreign key (parent_id) references chapters(id) on delete set null,
+    -- 복합 FK 대상: 플랜 과목의 범위 단원이 그 교과서의 단원인지 DB 가 검증한다
+    constraint uq_chapters_textbook_id unique (textbook_id, id)
 );
 
 create index idx_textbooks_subject_id on textbooks(subject_id);
@@ -133,7 +138,7 @@ create table school_textbook_adoptions (
     constraint fk_school_textbook_adoptions_subject
         foreign key (subject_id) references subjects(id) on delete cascade,
     constraint fk_school_textbook_adoptions_textbook
-        foreign key (textbook_id) references textbooks(id) on delete cascade,
+        foreign key (subject_id, textbook_id) references textbooks(subject_id, id) on delete cascade,
     constraint uq_school_textbook_adoption unique (school_id, grade, subject_id)
 );
 
@@ -167,10 +172,11 @@ create table plan_subjects (
         foreign key (plan_board_id) references plan_boards(id) on delete cascade,
     constraint fk_plan_subjects_textbook
         foreign key (textbook_id) references textbooks(id),
+    -- 범위 단원은 그 교과서의 단원만 (textbook_id 와 단원의 교과서가 어긋나지 않게)
     constraint fk_plan_subjects_start_chapter
-        foreign key (start_chapter_id) references chapters(id),
+        foreign key (textbook_id, start_chapter_id) references chapters(textbook_id, id),
     constraint fk_plan_subjects_end_chapter
-        foreign key (end_chapter_id) references chapters(id)
+        foreign key (textbook_id, end_chapter_id) references chapters(textbook_id, id)
 );
 
 create table plan_custom_exceptions (
@@ -207,16 +213,12 @@ create table plan_tasks (
     start_time time not null,
     end_time time not null,
     estimated_minutes int not null,
-    -- [제거 예정] status 로 대체. 서버가 status 만 쓰도록 배포된 뒤 다음 PR 에서 삭제한다
-    is_completed boolean default false,
     -- 챗봇으로 다른 날로 미뤘을 때 원래 날짜. NULL = 미룬 적 없음.
     -- 바로 전날에서 미뤄져 온 할일(postponed_from_date = 지금 날짜 - 1일)은 이틀 연속 미루지 못하게 서버가 막는다
     postponed_from_date date,
     -- 할일이 속한 과목. NULL = 과목 미지정(복습·재조정·챗봇 미루기로 파생된 할일, 컬럼 추가 전에 만든 행).
     -- 목록 조회에서 과목별로 묶어 제목(과목명)을 보여주는 데 쓴다
     subject_id int,
-    -- [제거 예정] status 로 대체 (서버가 쓴 적 없음). 다음 PR 에서 is_completed 와 함께 삭제한다
-    is_failed boolean not null default false,
     -- 할일 상태. PENDING = 대기, DONE = 완료(태스크 퀴즈 통과), FAILED = 실패(사용자가 실패를 고름 / 태스크 퀴즈 3회 불합격)
     status varchar(20) not null default 'PENDING',
     -- 할일 생성 출처. USER = 사용자가 직접 추가(챗봇이 만든 할일 포함), AI = 서버 AI 가 만듦(계획 생성·재조정 보충·퀴즈 복습).
@@ -390,11 +392,10 @@ create table chat_sessions (
 create index idx_chat_sessions_user_id_updated_at on chat_sessions(user_id, updated_at);
 
 -- daily_plan_id: 그 메시지로 어느 날 계획을 보고 고쳤는지 / session_id: 어느 대화에 속하는지 (#342)
--- session_id 는 기존 대화를 세션으로 옮긴 뒤 다음 PR 에서 not null 로 바꾼다
 create table chat_turns (
     id int generated always as identity primary key,
     daily_plan_id int not null,
-    session_id int,
+    session_id int not null,
     role varchar(10) not null, -- "user" | "assistant"
     content text not null,
     feedback varchar(10), -- 챗봇 답변의 좋아요·싫어요: 'LIKE' | 'DISLIKE' | null
