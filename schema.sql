@@ -397,7 +397,7 @@ create index idx_chat_sessions_user_id_updated_at on chat_sessions(user_id, upda
 -- daily_plan_id: 그 메시지로 어느 날 계획을 보고 고쳤는지 / session_id: 어느 대화에 속하는지 (#342)
 create table chat_turns (
     id int generated always as identity primary key,
-    daily_plan_id int not null,
+    daily_plan_id int, -- 이 메시지로 보고 고친 날의 계획. 계획 없이 나눈 대화면 null (rooter-back #351)
     session_id int not null,
     role varchar(10) not null, -- "user" | "assistant"
     content text not null,
