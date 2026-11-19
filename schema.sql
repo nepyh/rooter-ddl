@@ -158,6 +158,7 @@ create table plan_boards (
     exam_date date, -- 실제 시험 날짜 (end_date와 별개일 수 있음)
     is_cram_mode boolean not null default false, -- 벼락치기 모드 여부
     is_archived boolean not null default false, -- 보관한 보드. 목록에서 기본으로 빠지고 행은 남는다
+    is_representative boolean not null default false, -- 대표 플랜. 유저당 1개(아래 부분 유니크 인덱스). 홈 화면이 이 보드의 디데이를 보여준다
     created_at timestamp with time zone default current_timestamp,
     updated_at timestamp with time zone not null default current_timestamp, -- 제목·설명·기간·보관을 PATCH 하면 갱신
     constraint fk_plan_boards_user
@@ -193,6 +194,8 @@ create table plan_custom_exceptions (
 );
 
 create index idx_plan_boards_user_id on plan_boards(user_id);
+-- 대표 플랜은 유저당 1개만: true 인 행에만 걸리는 부분 유니크 인덱스
+create unique index uq_plan_boards_representative on plan_boards(user_id) where is_representative;
 create index idx_plan_subjects_board_id on plan_subjects(plan_board_id);
 create index idx_plan_custom_exceptions_board_id on plan_custom_exceptions(plan_board_id);
 
