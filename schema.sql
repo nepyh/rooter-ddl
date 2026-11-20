@@ -155,14 +155,18 @@ create table plan_boards (
     description text, -- 사용자가 붙이는 설명. 한 유저가 여러 보드를 가질 때 목록에서 구분하는 용도
     start_date date not null,
     end_date date not null,
-    exam_date date, -- 실제 시험 날짜 (end_date와 별개일 수 있음)
+    exam_date date, -- 실제 시험 날짜 (end_date와 별개일 수 있음). 시험이 여러 날이면 첫날
+    exam_end_date date, -- 시험 마지막 날. null 이면 exam_date 하루짜리 시험 (rooter-back #376)
     is_cram_mode boolean not null default false, -- 벼락치기 모드 여부
     is_archived boolean not null default false, -- 보관한 보드. 목록에서 기본으로 빠지고 행은 남는다
     is_representative boolean not null default false, -- 대표 플랜. 유저당 1개(아래 부분 유니크 인덱스). 홈 화면이 이 보드의 디데이를 보여준다
     created_at timestamp with time zone default current_timestamp,
     updated_at timestamp with time zone not null default current_timestamp, -- 제목·설명·기간·보관을 PATCH 하면 갱신
     constraint fk_plan_boards_user
-        foreign key (user_id) references users(id) on delete cascade
+        foreign key (user_id) references users(id) on delete cascade,
+    -- 시험 마지막 날은 시험 첫날이 있을 때만, 첫날보다 앞설 수 없다
+    constraint chk_plan_boards_exam_end_date
+        check (exam_end_date is null or (exam_date is not null and exam_end_date >= exam_date))
 );
 
 create table plan_subjects (
