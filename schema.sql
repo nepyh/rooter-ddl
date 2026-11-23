@@ -244,9 +244,22 @@ create table plan_tasks (
         check (origin in ('USER', 'AI'))
 );
 
+-- 할일이 다루는 단원. 행이 없으면 단원 미지정(그 과목의 보드 범위 전체로 퀴즈 출제).
+-- 앱에서 떨어진 단원을 여러 개 고를 수 있어(1단원·3단원) start/end 컬럼이 아니라 별도 테이블로 둔다
+create table plan_task_chapters (
+    plan_task_id int not null,
+    chapter_id int not null,
+    primary key (plan_task_id, chapter_id),
+    constraint fk_plan_task_chapters_task
+        foreign key (plan_task_id) references plan_tasks(id) on delete cascade,
+    constraint fk_plan_task_chapters_chapter
+        foreign key (chapter_id) references chapters(id) on delete cascade
+);
+
 create index idx_daily_plans_board_id on daily_plans(plan_board_id);
 create index idx_plan_tasks_daily_plan_id on plan_tasks(daily_plan_id);
 create index idx_plan_tasks_subject_id on plan_tasks(subject_id);
+create index idx_plan_task_chapters_chapter_id on plan_task_chapters(chapter_id);
 
 -- =============================================================================
 -- 공부스타일 설문 도메인
