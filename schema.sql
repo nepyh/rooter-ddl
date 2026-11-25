@@ -179,7 +179,7 @@ create table plan_boards (
 -- 빈 시간·기존 할일은 구간을 만드는 시점에 다시 계산하므로 여기 두지 않는다
 create table plan_generation_requests (
     plan_board_id int primary key,
-    request jsonb not null, -- 서버가 만든 생성 입력 스냅샷 (형식은 서버 코드가 정의)
+    request text not null, -- 서버가 만든 생성 입력 스냅샷 JSON (형식은 서버 코드가 정의, DB 에서 안을 조회하지 않아 text)
     generated_until date not null, -- 지금까지 만들어 저장한 마지막 날짜. 다음 구간은 그 다음 날부터
     last_error text, -- 마지막 실패 사유 (failed 원인 확인용)
     created_at timestamp with time zone not null default current_timestamp,
