@@ -162,11 +162,30 @@ create table plan_boards (
     is_representative boolean not null default false, -- 대표 플랜. 유저당 1개(아래 부분 유니크 인덱스). 홈 화면이 이 보드의 디데이를 보여준다
     created_at timestamp with time zone default current_timestamp,
     updated_at timestamp with time zone not null default current_timestamp, -- 제목·설명·기간·보관을 PATCH 하면 갱신
+    -- AI 계획 생성 상태 (rooter-back #405). 앞 7일만 먼저 만들어 응답하고 나머지 기간은 서버가 이어서 만든다.
+    -- completed: 다 만듦 (직접 만든 보드·7일 이하·기존 보드), generating: 뒷부분을 만드는 중, failed: 재시도까지 실패
+    generation_status varchar(20) not null default 'completed',
     constraint fk_plan_boards_user
         foreign key (user_id) references users(id) on delete cascade,
     -- 시험 마지막 날은 시험 첫날이 있을 때만, 첫날보다 앞설 수 없다
     constraint chk_plan_boards_exam_end_date
-        check (exam_end_date is null or (exam_date is not null and exam_end_date >= exam_date))
+        check (exam_end_date is null or (exam_date is not null and exam_end_date >= exam_date)),
+    constraint chk_plan_boards_generation_status
+        check (generation_status in ('completed', 'generating', 'failed'))
+);
+
+-- 이어서 만들 AI 계획 생성 요청 (rooter-back #405). 생성 중이거나 실패한 보드만 행이 있다.
+-- 뒷 구간을 만들 때 첫 요청의 입력(과목·범위·실력 등급·벼락치기·목표 점수 등)이 다시 필요해 그대로 보관한다.
+-- 빈 시간·기존 할일은 구간을 만드는 시점에 다시 계산하므로 여기 두지 않는다
+create table plan_generation_requests (
+    plan_board_id int primary key,
+    request text not null, -- 서버가 만든 생성 입력 스냅샷 JSON (형식은 서버 코드가 정의, DB 에서 안을 조회하지 않아 text)
+    generated_until date not null, -- 지금까지 만들어 저장한 마지막 날짜. 다음 구간은 그 다음 날부터
+    last_error text, -- 마지막 실패 사유 (failed 원인 확인용)
+    created_at timestamp with time zone not null default current_timestamp,
+    updated_at timestamp with time zone not null default current_timestamp,
+    constraint fk_plan_generation_requests_board
+        foreign key (plan_board_id) references plan_boards(id) on delete cascade
 );
 
 create table plan_subjects (
@@ -200,6 +219,8 @@ create table plan_custom_exceptions (
 create index idx_plan_boards_user_id on plan_boards(user_id);
 -- 대표 플랜은 유저당 1개만: true 인 행에만 걸리는 부분 유니크 인덱스
 create unique index uq_plan_boards_representative on plan_boards(user_id) where is_representative;
+-- 이어서 생성하는 스케줄러 잡이 1분마다 생성 중인 보드를 찾는다 — 대부분 completed 라 부분 인덱스로 작게
+create index idx_plan_boards_generating on plan_boards(id) where generation_status = 'generating';
 create index idx_plan_subjects_board_id on plan_subjects(plan_board_id);
 create index idx_plan_custom_exceptions_board_id on plan_custom_exceptions(plan_board_id);
 
